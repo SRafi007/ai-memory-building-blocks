@@ -1,7 +1,7 @@
 # app/memory/long_term.py
 
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import PointStruct, VectorParams, Distance
+from qdrant_client.http.models import PointStruct, VectorParams, Distance, SearchRequest
 from sentence_transformers import SentenceTransformer
 from app.memory.schema import LongTermMemoryEntry
 from uuid import uuid4
@@ -10,74 +10,70 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-COLLECTION_NAME = "long_term_memory"
-
 
 class LongTermMemory:
     def __init__(
         self,
-        host="localhost",
-        port=6333,
-        model_name="all-MiniLM-L6-v2",
-        vector_size=384,
+        host: str = "localhost",
+        port: int = 6333,
+        collection_name: str = "long_term_memory",
+        embedding_model: str = "all-MiniLM-L6-v2",
+        vector_size: int = 384,  # default for MiniLM
     ):
+        self.collection_name = collection_name
         self.client = QdrantClient(host=host, port=port)
-        self.model = SentenceTransformer(model_name)
-        self.vector_size = vector_size
-        self._ensure_collection()
+        self.model = SentenceTransformer(embedding_model)
 
-    def _ensure_collection(self):
-        if not self.client.collection_exists(collection_name=COLLECTION_NAME):
+        self._ensure_collection(vector_size)
+
+    def _ensure_collection(self, vector_size: int):
+        if not self.client.collection_exists(self.collection_name):
+            logger.info(f"Creating Qdrant collection: {self.collection_name}")
             self.client.recreate_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=VectorParams(
-                    size=self.vector_size, distance=Distance.COSINE
-                ),
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
             )
-            logger.info(f"Created Qdrant collection: {COLLECTION_NAME}")
-
-    def _embed(self, text: str) -> List[float]:
-        return self.model.encode(text).tolist()
 
     def add_entry(
         self, user_id: str, text: str, metadata: Optional[dict] = None
     ) -> str:
-        embedding = self._embed(text)
-        point_id = str(uuid4())
-        entry = LongTermMemoryEntry(
-            id=point_id,
-            user_id=user_id,
-            text=text,
-            metadata=metadata or {},
-            embedding=embedding,
-        )
-        point = PointStruct(
-            id=point_id,
-            vector=embedding,
-            payload={
-                "user_id": entry.user_id,
-                "text": entry.text,
-                "metadata": entry.metadata,
-                "timestamp": entry.timestamp.isoformat(),
-            },
-        )
-        self.client.upsert(collection_name=COLLECTION_NAME, points=[point])
-        logger.info(f"Added entry to LTM: {point_id}")
-        return point_id
+        embedding = self.model.encode(text).tolist()
+        entry_id = str(uuid4())
+        metadata = metadata or {}
 
-    def query(self, user_id: str, query_text: str, top_k: int = 5) -> List[dict]:
-        query_vector = self._embed(query_text)
-        results = self.client.search(
-            collection_name=COLLECTION_NAME,
-            query_vector=query_vector,
-            limit=top_k,
-            query_filter={"must": [{"key": "user_id", "match": {"value": user_id}}]},
+        point = PointStruct(
+            id=entry_id,
+            vector=embedding,
+            payload={"user_id": user_id, "text": text, "metadata": metadata},
         )
-        return [
-            {
-                "text": hit.payload["text"],
-                "score": hit.score,
-                "metadata": hit.payload.get("metadata", {}),
-            }
-            for hit in results
-        ]
+
+        self.client.upsert(collection_name=self.collection_name, points=[point])
+        return entry_id
+
+    def search(
+        self, query_text: str, top_k: int = 5, user_id: Optional[str] = None
+    ) -> List[LongTermMemoryEntry]:
+        query_vector = self.model.encode(query_text).tolist()
+        filters = None
+
+        results = self.client.search(
+            collection_name=self.collection_name, query_vector=query_vector, limit=top_k
+        )
+
+        memory_entries = []
+        for result in results:
+            payload = result.payload
+            if user_id and payload.get("user_id") != user_id:
+                continue
+
+            memory_entries.append(
+                LongTermMemoryEntry(
+                    id=str(result.id),
+                    user_id=payload["user_id"],
+                    text=payload["text"],
+                    metadata=payload.get("metadata", {}),
+                    embedding=result.vector,
+                )
+            )
+
+        return memory_entries
