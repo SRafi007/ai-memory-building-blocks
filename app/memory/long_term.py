@@ -1,63 +1,83 @@
 # app/memory/long_term.py
 
-import chromadb
-from chromadb.config import Settings
-from chromadb.utils.embedding_functions import EmbeddingFunction
-from typing import List, Optional
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import PointStruct, VectorParams, Distance
+from sentence_transformers import SentenceTransformer
 from app.memory.schema import LongTermMemoryEntry
+from uuid import uuid4
+from typing import List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+COLLECTION_NAME = "long_term_memory"
 
 
 class LongTermMemory:
     def __init__(
         self,
-        collection_name: str = "long_term_memory",
-        persist_dir: str = "./data/chroma",
-        embedding_function: Optional[EmbeddingFunction] = None,
+        host="localhost",
+        port=6333,
+        model_name="all-MiniLM-L6-v2",
+        vector_size=384,
     ):
-        self.client = chromadb.PersistentClient(path=persist_dir)
+        self.client = QdrantClient(host=host, port=port)
+        self.model = SentenceTransformer(model_name)
+        self.vector_size = vector_size
+        self._ensure_collection()
 
-        self.embedding_function = embedding_function
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name, embedding_function=embedding_function
-        )
-
-    def add(self, entry: LongTermMemoryEntry):
-        if entry.embedding is None and self.embedding_function is not None:
-            entry.embedding = self.embedding_function([entry.text])[0]
-
-        self.collection.add(
-            ids=[entry.id],
-            documents=[entry.text],
-            metadatas=[{"user_id": entry.user_id, **(entry.metadata or {})}],
-            embeddings=[entry.embedding] if entry.embedding else None,
-        )
-
-    def query(self, query_text: str, n_results: int = 5) -> List[LongTermMemoryEntry]:
-        if not self.embedding_function:
-            raise ValueError("No embedding function provided for querying")
-
-        query_embedding = self.embedding_function([query_text])[0]
-        results = self.collection.query(
-            query_embeddings=[query_embedding], n_results=n_results
-        )
-
-        entries = []
-        for i in range(len(results["ids"][0])):
-            entry = LongTermMemoryEntry(
-                id=results["ids"][0][i],
-                text=results["documents"][0][i],
-                metadata=results["metadatas"][0][i],
-                embedding=None,  # Embeddings not returned by default
+    def _ensure_collection(self):
+        if not self.client.collection_exists(collection_name=COLLECTION_NAME):
+            self.client.recreate_collection(
+                collection_name=COLLECTION_NAME,
+                vectors_config=VectorParams(
+                    size=self.vector_size, distance=Distance.COSINE
+                ),
             )
-            entries.append(entry)
+            logger.info(f"Created Qdrant collection: {COLLECTION_NAME}")
 
-        return entries
+    def _embed(self, text: str) -> List[float]:
+        return self.model.encode(text).tolist()
 
-    def delete(self, doc_id: str):
-        self.collection.delete(ids=[doc_id])
+    def add_entry(
+        self, user_id: str, text: str, metadata: Optional[dict] = None
+    ) -> str:
+        embedding = self._embed(text)
+        point_id = str(uuid4())
+        entry = LongTermMemoryEntry(
+            id=point_id,
+            user_id=user_id,
+            text=text,
+            metadata=metadata or {},
+            embedding=embedding,
+        )
+        point = PointStruct(
+            id=point_id,
+            vector=embedding,
+            payload={
+                "user_id": entry.user_id,
+                "text": entry.text,
+                "metadata": entry.metadata,
+                "timestamp": entry.timestamp.isoformat(),
+            },
+        )
+        self.client.upsert(collection_name=COLLECTION_NAME, points=[point])
+        logger.info(f"Added entry to LTM: {point_id}")
+        return point_id
 
-    def list_ids(self) -> List[str]:
-        return self.collection.peek()["ids"]
-
-    def persist(self):
-        self.client.persist()
+    def query(self, user_id: str, query_text: str, top_k: int = 5) -> List[dict]:
+        query_vector = self._embed(query_text)
+        results = self.client.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=query_vector,
+            limit=top_k,
+            query_filter={"must": [{"key": "user_id", "match": {"value": user_id}}]},
+        )
+        return [
+            {
+                "text": hit.payload["text"],
+                "score": hit.score,
+                "metadata": hit.payload.get("metadata", {}),
+            }
+            for hit in results
+        ]
