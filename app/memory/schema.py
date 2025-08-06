@@ -23,3 +23,13 @@ class LongTermMemoryEntry(BaseModel):
     metadata: Optional[dict] = {}
     embedding: Optional[List[float]] = None
     timestamp: datetime = Field(default_factory=now_utc)
+
+
+class MemoryEntry(BaseModel):
+    id: Optional[str] = None  # For LTM; STM won't have it
+    user_id: Optional[str] = None
+    text: str
+    metadata: Optional[dict] = {}
+    timestamp: datetime
+    source: str  # Either 'short_term' or 'long_term'
+    importance: float = 0.5

@@ -38,7 +38,15 @@ class LongTermMemory:
 
     def add_entry(
         self, user_id: str, text: str, metadata: Optional[dict] = None
-    ) -> str:
+    ) -> Optional[str]:
+        # Deduplication: search for similar text
+        existing = self.search(query_text=text, top_k=3, user_id=user_id)
+        for e in existing:
+            if e.text.strip().lower() == text.strip().lower():
+                logger.info(f"Duplicate entry found. Skipping: {text}")
+                return None  # Don't re-save duplicate
+
+        # Proceed with adding
         embedding = self.model.encode(text).tolist()
         entry_id = str(uuid4())
         metadata = metadata or {}

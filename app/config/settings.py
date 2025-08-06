@@ -1,4 +1,4 @@
-# config/settings.py
+# app/config/settings.py
 
 # Long Term Memory settings
 LTM_COLLECTION_NAME = "ai_memory_project_long_term_memory"
