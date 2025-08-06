@@ -4,14 +4,15 @@ from app.memory.short_term import ShortTermMemory
 from app.memory.long_term import LongTermMemory
 from typing import Optional, Dict, List
 from app.memory.schema import LongTermMemoryEntry
+from app.config import settings
 
 
 class MemoryManager:
     def __init__(
         self,
-        stm_ttl_minutes: int = 30,
-        collection_name: str = "long_term_memory",
-        embedding_model: str = "all-MiniLM-L6-v2",
+        stm_ttl_minutes: int = settings.STM_TTL_MINUTES,
+        collection_name: str = settings.LTM_COLLECTION_NAME,
+        embedding_model: str = settings.LTM_EMBEDDING_MODEL,
     ):
         self.stm = ShortTermMemory(ttl_minutes=stm_ttl_minutes)
         self.ltm = LongTermMemory(

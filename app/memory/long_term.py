@@ -8,17 +8,19 @@ from uuid import uuid4
 from typing import List, Optional
 import logging
 
+from app.config import settings  # <-- Import settings
+
 logger = logging.getLogger(__name__)
 
 
 class LongTermMemory:
     def __init__(
         self,
-        host: str = "localhost",
-        port: int = 6333,
-        collection_name: str = "long_term_memory",
-        embedding_model: str = "all-MiniLM-L6-v2",
-        vector_size: int = 384,  # default for MiniLM
+        host: str = settings.LTM_QDRANT_HOST,
+        port: int = settings.LTM_QDRANT_PORT,
+        collection_name: str = settings.LTM_COLLECTION_NAME,
+        embedding_model: str = settings.LTM_EMBEDDING_MODEL,
+        vector_size: int = settings.LTM_VECTOR_SIZE,
     ):
         self.collection_name = collection_name
         self.client = QdrantClient(host=host, port=port)
@@ -54,7 +56,6 @@ class LongTermMemory:
         self, query_text: str, top_k: int = 5, user_id: Optional[str] = None
     ) -> List[LongTermMemoryEntry]:
         query_vector = self.model.encode(query_text).tolist()
-        filters = None
 
         results = self.client.search(
             collection_name=self.collection_name, query_vector=query_vector, limit=top_k
