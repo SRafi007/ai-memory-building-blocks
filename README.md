@@ -1,129 +1,128 @@
-# AI Memory System
+# AI Memory Building Blocks
 
-A modular, scalable memory framework for AI systems — designed to manage **Short-Term** and **Long-Term** memory contexts independently of any specific agent. This project provides a robust foundation for memory in chatbots, planners, task managers, and autonomous agents.
-
----
+A **plug-and-play memory system** designed to store, recall, and score contextual memory — usable in **chatbots**, **agents**, **task systems**, or **LLM pipelines**.
 
 ## Features
 
-- **Short-Term Memory (STM)**: Fast, temporary context storage using in-memory or Redis backends.
-- **Long-Term Memory (LTM)**: Persistent semantic memory using vector databases like ChromaDB or Qdrant.
-- **Memory Manager**: Central interface for memory operations, routing intelligently between STM and LTM.
-- **Pluggable Architecture**: Swap out storage, embedding models, or TTL logic easily.
-- **Reusable**: Can be embedded into larger AI systems or used as a standalone memory module.
-
----
-
-## Project Structure
-
-```
-ai_memory_system/
-│
-├── app/
-│   ├── memory/                # STM, LTM, Memory Manager, Schemas
-│   ├── storage/               # Storage backends: Redis, ChromaDB, Files
-│   ├── utils/                 # Embeddings, Logging, Timers
-│   └── config/                # Environment/config management
-├── data/                      # Local file-based memory (for prototyping)
-├── examples/                  # Demos using STM/LTM
-├── tests/                     # Unit and integration tests
-├── scripts/                   # Setup and seeding scripts
-├── main.py                    # Entrypoint (for testing and demo)
-└── README.md                  # You're here!
-```
-
----
-
-## Memory Concepts
-
-| Type               | Role                                                                 |
-|--------------------|----------------------------------------------------------------------|
-| **Short-Term**     | Temporary memory (current session/task). Low-latency access.         |
-| **Long-Term**      | Persistent memory across sessions. Supports vector similarity search.|
-| **Memory Manager** | Orchestrates what to store/retrieve from STM or LTM.                 |
-
----
+* **Short-Term Memory (STM)**: Stores session-level data with TTL.
+* **Long-Term Memory (LTM)**: Stores vectorized memory using Qdrant.
+* **Deduplication**: Prevents storing duplicate thoughts.
+* **Importance Scoring**: Tags memory based on urgency/keywords.
+* **Visualization**: View top important memories graphically.
+* **Unit-Tested**: Includes tests for STM, LTM, and promotions.
 
 ## Data Flow
 
-Here's how memory flows between components in the system:
-
-```text
-                ┌──────────────────────────────┐
-                │      Input from Agent        │
-                └────────────┬─────────────────┘
-                             │
-                             ▼
-              ┌─────────────────────────────┐
-              │  Memory Manager (Router)    │
-              └────────────┬────────────────┘
-         ┌─────────────────┴────────────┐
-         ▼                              ▼
-┌──────────────────────┐     ┌────────────────────────┐
-│ Short-Term Memory    │     │   Long-Term Memory     │
-│ (in-memory or Redis) │     │ (Vector DB, e.g. Chroma│
-└─────────┬────────────┘     └──────────┬─────────────┘
-          │                             │
-     Recent task,                      Stored facts,
-     conversation,                     knowledge, history,
-     or user session                   embeddings
-          │                             │
-          └────────────┬───────────────┘
-                       ▼
-              ┌────────────────────┐
-              │   Memory Output    │
-              └────────────────────┘
-                       │
-                       ▼
-         Injected into agent, prompt, planner, etc.
+```
+┌───────────────────┐
+│ Your AI Agent     │
+└────────┬──────────┘
+         │
+┌─────────▼──────────┐
+│ ShortTermMemory    │
+│ (session, TTL)     │
+└─────────┬──────────┘
+         │ Promote STM
+         ▼
+┌─────────▼──────────┐
+│ LongTermMemory     │
+│ (Qdrant vector DB) │
+└─────────┬──────────┘
+         │
+┌──────────▼──────────┐
+│ MemoryManager API   │
+└──────────┬──────────┘
+         │
+┌────────────▼─────────────┐
+│ Scoring + Deduplication  │
+└──────────────────────────┘
 ```
 
-## Setup Instructions
+## File Structure Overview
 
-### 1. Clone the Repo
-```bash
-git clone https://github.com/yourusername/ai_memory_system.git
-cd ai_memory_system
+```
+ai-memory-building-blocks/
+├── app/
+│   ├── config/
+│   │   └── settings.py           # All memory configs
+│   └── memory/
+│       ├── schema.py             # Memory entry models
+│       ├── scoring.py            # Importance scoring logic
+│       ├── short_term.py         # STM engine (in-memory with TTL)
+│       ├── long_term.py          # LTM engine (Qdrant-backed)
+│       └── memory_manager.py     # Unified interface for STM+LTM
+├── examples/
+│   ├── memory_demo.py            # Shows usage of STM + LTM
+│   ├── clear_ltm.py              # Delete Qdrant collection
+│   └── visualize_top_memories.py # Plot important memories
+├── scripts/
+│   ├── export_ltm.py             # Export LTM to JSON
+│   ├── import_ltm.py             # Import LTM from JSON
+│   └── view_ltm.py               # View all entries
+├── tests/
+│   └── test_memory.py            # Unit tests for STM, LTM, promotion
+├── requirements.txt
+├── README.md                     # ← You're here
+└── SETUP.md                      # Setup & integration guide
 ```
 
-### 2. Install Dependencies
+## Quick Demo
+
 ```bash
-pip install -r requirements.txt
-```
+# Run Qdrant
+docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
 
-### 3. Configure Environment
-Edit the `.env` file (or `config/settings.py`) with the correct paths for:
+# Run memory demo
+python examples/memory_demo.py
 
-- Redis or in-memory STM
-- ChromaDB or Qdrant LTM
-- Embedding model path/name
+# Visualize important memories
+python examples/visualize_top_memories.py
 
-### 4. Run a Demo
-```bash
-python examples/chat_simulation.py
-```
-
-## Testing
-```bash
+# Run tests
 pytest tests/
 ```
 
-## Integration Use Cases
+## Integrating Into Your Project
 
-This memory system can be embedded into:
+To plug this into your AI/LLM/Agent app:
 
-- Chatbots with memory and context
-- Task planners or productivity agents
-- Knowledge-based agents (RAG, AutoGPT clones)
-- Multi-session user interaction platforms
+1. Copy:
+   * `app/memory/`
+   * `app/config/settings.py`
+2. Set up Qdrant (local or remote)
+3. Use:
 
-## Future Enhancements
+```python
+from app.memory.memory_manager import MemoryManager
 
-- Memory summarization (auto-condense STM for LTM)
-- TTL policies for STM cleanup
-- Embedding model plug-and-play via config
-- Multi-user memory isolation
+memory = MemoryManager()
+memory.set_short_term("session1", "intent", "book_flight")
+memory.promote_stm_to_ltm("session1", "user_123")
+results = memory.recall("user_123", "flight")
+```
+
+See full instructions in `SETUP.md`
+
+## Use Cases
+
+* **Chatbots & Agents** – Remember past conversations
+* **Task AI** – Recall user preferences, scheduled meetings
+* **LLM Chains** – Feed memory context to prompts
+* **RAG Systems** – Store/retrieve vectorized memory
+
+## Persistence
+
+* STM is stored in RAM (clears after TTL or shutdown)
+* LTM is persisted in **Qdrant**, a blazing-fast vector DB
+  * Optionally export/import from JSON
+
+## Future Additions
+
+* Replace `search()` with `query_points()` (Qdrant)
+* Convert to installable pip package
+* Add FastAPI / REST wrapper
+* Add AI-powered scoring (using OpenAI or LLM)
 
 ## Author
 
-Built by Rafi Coding — AI systems explorer and engineer in progress
+Made with by Sadman Sakib Rafi
